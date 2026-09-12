@@ -1,0 +1,9 @@
+node_modules/
+database.sqlite
+database.sqlite-shm
+database.sqlite-wal
+.env
+uploads/avatars/*
+!uploads/avatars/.gitkeep
+uploads/attachments/*
+!uploads/attachments/.gitkeep

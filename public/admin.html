@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuraChat — Admin</title>
+<style>
+  :root {
+    --bg: #0e1420; --s1: #171d2c; --s2: #1c2333; --b1: #2c3448; --b2: #38415a;
+    --tx: #f2f3f5; --muted: #8891a8; --acc: #4EA4F5; --green: #22c55e; --red: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--tx);
+    font-family: 'Segoe UI', system-ui, sans-serif; display: flex; justify-content: center; padding: 40px 16px;
+  }
+  .wrap { width: 100%; max-width: 560px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+  .card {
+    background: var(--s1); border: 1px solid var(--b1); border-radius: 8px;
+    padding: 20px; margin-bottom: 16px;
+  }
+  label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+  input {
+    width: 100%; padding: 10px 12px; background: var(--s2); border: 1px solid var(--b1);
+    border-radius: 6px; color: var(--tx); font-size: 14px; outline: none; margin-bottom: 14px;
+  }
+  input:focus { border-color: var(--acc); }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    padding: 9px 16px; border-radius: 6px; border: 1px solid var(--b2); background: var(--s2);
+    color: var(--tx); font-size: 13px; cursor: pointer;
+  }
+  button:hover { background: var(--b1); }
+  button.acc { background: var(--acc); border-color: var(--acc); color: #fff; }
+  button.danger { color: var(--red); border-color: rgba(239,68,68,.4); }
+  button.danger:hover { background: rgba(239,68,68,.1); }
+  button:disabled { opacity: .5; cursor: default; }
+  #result { margin-top: 4px; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--b1); font-size: 13px; }
+  .row:last-child { border-bottom: none; }
+  .row .k { color: var(--muted); }
+  .row .v { text-align: right; word-break: break-all; }
+  .status { font-size: 12px; padding: 3px 9px; border-radius: 20px; display: inline-block; }
+  .status.ok { background: rgba(34,197,94,.15); color: var(--green); }
+  .status.bad { background: rgba(239,68,68,.15); color: var(--red); }
+  .msg { font-size: 13px; padding: 10px 12px; border-radius: 6px; margin-bottom: 14px; }
+  .msg.err { background: rgba(239,68,68,.1); color: #fca5a5; border: 1px solid rgba(239,68,68,.25); }
+  .msg.ok { background: rgba(34,197,94,.1); color: #86efac; border: 1px solid rgba(34,197,94,.25); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>AuraChat — Admin</h1>
+  <div class="sub">Информация об аккаунте, бан и удаление по юзернейму.</div>
+
+  <div class="card">
+    <label>Админ-ключ</label>
+    <input type="password" id="admin-key" placeholder="ADMIN_API_KEY из .env">
+    <label>Юзернейм</label>
+    <input type="text" id="username" placeholder="username" onkeydown="if(event.key==='Enter') lookupUser()">
+    <div class="btn-row">
+      <button class="acc" onclick="lookupUser()">Информация</button>
+      <button onclick="banUser()">Забанить</button>
+      <button onclick="unbanUser()">Разбанить</button>
+      <button class="danger" onclick="deleteUser()">Удалить аккаунт</button>
+    </div>
+  </div>
+
+  <div id="msg"></div>
+  <div id="result"></div>
+
+  <h1 style="margin-top:36px">Сервера</h1>
+  <div class="sub">Информация, бан и удаление сервера — по числовому ID или инвайт-коду.</div>
+  <div class="card">
+    <label>ID сервера или инвайт-код</label>
+    <input type="text" id="server-identifier" placeholder="1 или a1b2c3d4e5" onkeydown="if(event.key==='Enter') lookupServer()">
+    <div class="btn-row">
+      <button class="acc" onclick="lookupServer()">Информация</button>
+      <button onclick="banServer()">Забанить</button>
+      <button onclick="unbanServer()">Разбанить</button>
+      <button class="danger" onclick="deleteServer()">Удалить сервер</button>
+    </div>
+  </div>
+
+  <div id="server-msg"></div>
+  <div id="server-result"></div>
+</div>
+
+<script>
+  const keyInput = document.getElementById('admin-key');
+  const savedKey = sessionStorage.getItem('aura_admin_key');
+  if (savedKey) keyInput.value = savedKey;
+  keyInput.addEventListener('input', () => sessionStorage.setItem('aura_admin_key', keyInput.value));
+
+  function showMsg(text, type) {
+    document.getElementById('msg').innerHTML = `<div class="msg ${type}">${text}</div>`;
+  }
+
+  function getUsername() {
+    const u = document.getElementById('username').value.trim();
+    if (!u) { showMsg('Введи юзернейм', 'err'); return null; }
+    return u;
+  }
+
+  async function adminFetch(path, options = {}) {
+    const key = keyInput.value.trim();
+    if (!key) { showMsg('Введи админ-ключ', 'err'); throw new Error('no key'); }
+    const res = await fetch(path, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Key': key, ...(options.headers || {}) },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Ошибка ${res.status}`);
+    return data;
+  }
+
+  function renderUser(user) {
+    const rows = [
+      ['ID', user.id],
+      ['Юзернейм', user.username],
+      ['Имя', user.name || '—'],
+      ['Email', user.email],
+      ['Email подтверждён', badge(user.emailVerified)],
+      ['2FA включена', badge(user.totpEnabled)],
+      ['Забанен', badge(user.isBanned, true)],
+      ['Причина бана', user.ban_reason || '—'],
+      ['Забанен когда', user.banned_at || '—'],
+      ['Статус', user.status],
+      ['Последний визит', user.last_seen || '—'],
+      ['Создан', user.created_at],
+    ];
+    document.getElementById('result').innerHTML = `<div class="card">${rows.map(([k, v]) => `
+      <div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>
+    `).join('')}</div>`;
+  }
+
+  function badge(value, invert = false) {
+    const good = invert ? !value : value;
+    return `<span class="status ${good ? 'ok' : 'bad'}">${value ? 'да' : 'нет'}</span>`;
+  }
+
+  async function lookupUser() {
+    const username = getUsername();
+    if (!username) return;
+    try {
+      const data = await adminFetch(`/api/admin/users/${encodeURIComponent(username)}`);
+      showMsg('Найден', 'ok');
+      renderUser(data.user);
+    } catch (e) {
+      showMsg(e.message, 'err');
+      document.getElementById('result').innerHTML = '';
+    }
+  }
+
+  async function banUser() {
+    const username = getUsername();
+    if (!username) return;
+    const reason = prompt('Причина бана (необязательно):') || '';
+    try {
+      const data = await adminFetch(`/api/admin/users/${encodeURIComponent(username)}/ban`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      });
+      showMsg(`Забанен: ${username}`, 'ok');
+      renderUser(data.user);
+    } catch (e) {
+      showMsg(e.message, 'err');
+    }
+  }
+
+  async function unbanUser() {
+    const username = getUsername();
+    if (!username) return;
+    try {
+      const data = await adminFetch(`/api/admin/users/${encodeURIComponent(username)}/unban`, { method: 'POST' });
+      showMsg(`Разбанен: ${username}`, 'ok');
+      renderUser(data.user);
+    } catch (e) {
+      showMsg(e.message, 'err');
+    }
+  }
+
+  async function deleteUser() {
+    const username = getUsername();
+    if (!username) return;
+    if (!confirm(`Удалить аккаунт "${username}" безвозвратно? Это удалит все его сообщения и связи с друзьями.`)) return;
+    try {
+      await adminFetch(`/api/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
+      showMsg(`Удалён: ${username}`, 'ok');
+      document.getElementById('result').innerHTML = '';
+    } catch (e) {
+      showMsg(e.message, 'err');
+    }
+  }
+
+  // ---- Сервера ----
+  function showServerMsg(text, type) {
+    document.getElementById('server-msg').innerHTML = `<div class="msg ${type}">${text}</div>`;
+  }
+
+  function getServerIdentifier() {
+    const v = document.getElementById('server-identifier').value.trim();
+    if (!v) { showServerMsg('Введи ID сервера или инвайт-код', 'err'); return null; }
+    return v;
+  }
+
+  function renderServer(server) {
+    const rows = [
+      ['ID', server.id],
+      ['Название', server.name],
+      ['Владелец', server.ownerUsername || server.owner_id],
+      ['Инвайт-код', server.invite_code],
+      ['Участников', server.memberCount],
+      ['Забанен', badge(!!server.is_banned, true)],
+      ['Причина бана', server.ban_reason || '—'],
+      ['Забанен когда', server.banned_at || '—'],
+      ['Создан', server.created_at],
+    ];
+    document.getElementById('server-result').innerHTML = `<div class="card">${rows.map(([k, v]) => `
+      <div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>
+    `).join('')}</div>`;
+  }
+
+  async function lookupServer() {
+    const id = getServerIdentifier();
+    if (!id) return;
+    try {
+      const data = await adminFetch(`/api/admin/servers/${encodeURIComponent(id)}`);
+      showServerMsg('Найден', 'ok');
+      renderServer(data.server);
+    } catch (e) {
+      showServerMsg(e.message, 'err');
+      document.getElementById('server-result').innerHTML = '';
+    }
+  }
+
+  async function banServer() {
+    const id = getServerIdentifier();
+    if (!id) return;
+    const reason = prompt('Причина бана (необязательно):') || '';
+    try {
+      const data = await adminFetch(`/api/admin/servers/${encodeURIComponent(id)}/ban`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      });
+      showServerMsg('Сервер забанен', 'ok');
+      renderServer(data.server);
+    } catch (e) {
+      showServerMsg(e.message, 'err');
+    }
+  }
+
+  async function unbanServer() {
+    const id = getServerIdentifier();
+    if (!id) return;
+    try {
+      const data = await adminFetch(`/api/admin/servers/${encodeURIComponent(id)}/unban`, { method: 'POST' });
+      showServerMsg('Сервер разбанен', 'ok');
+      renderServer(data.server);
+    } catch (e) {
+      showServerMsg(e.message, 'err');
+    }
+  }
+
+  async function deleteServer() {
+    const id = getServerIdentifier();
+    if (!id) return;
+    if (!confirm(`Удалить сервер "${id}" безвозвратно? Это удалит все его каналы, роли и сообщения.`)) return;
+    try {
+      await adminFetch(`/api/admin/servers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      showServerMsg('Сервер удалён', 'ok');
+      document.getElementById('server-result').innerHTML = '';
+    } catch (e) {
+      showServerMsg(e.message, 'err');
+    }
+  }
+</script>
+</body>
+</html>
