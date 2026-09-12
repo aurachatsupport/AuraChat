@@ -7,10 +7,13 @@ const app = require('./src/app');
 const { initDatabase } = require('./src/config/database');
 const { initSocket } = require('./src/socket/index');
 
+// Инициализация базы данных
 initDatabase();
 
+// Создаём HTTP-сервер
 const server = http.createServer(app);
 
+// Socket.IO
 const io = new Server(server, {
   cors: {
     origin: process.env.CLIENT_URL || '*',
@@ -18,14 +21,16 @@ const io = new Server(server, {
   },
 });
 
+// Инициализация Socket.IO
 initSocket(io);
 
-// Роуты (friends.js и т.д.) должны уметь слать сокет-события конкретным пользователям
-// в реальном времени (например, "тебе пришла заявка в друзья") — даём им доступ к io.
+// Даём роутам доступ к Socket.IO
 app.set('io', io);
 
+// Render передаёт PORT через переменную окружения
 const PORT = process.env.PORT || 3001;
 
-server.listen(PORT, () => {
+// Запуск сервера
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`[server] AuraChat backend запущен на порту ${PORT}`);
 });
